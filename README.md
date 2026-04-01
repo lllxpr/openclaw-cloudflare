@@ -137,7 +137,6 @@ OpenClaw stores pairing data and chat sessions in `/home/node/.openclaw/`. Since
 
 1. **On startup**: Container fetches a base64-encoded tarball from KV and extracts it
 2. **On approve**: Snapshot is saved to KV immediately
-3. **Every 5 min**: Periodic backup to KV
 
 Persisted directories: `devices/`, `identity/`, `agents/` (chat sessions).
 
