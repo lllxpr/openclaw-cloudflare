@@ -1,31 +1,24 @@
 import { Container, switchPort } from "@cloudflare/containers";
 import { getAdminHtml } from "./admin-html";
 
-// ============================================================
-// TODO: Replace these with your own values before deploying
-// ============================================================
-const WORKER_URL = "https://<your-worker-name>.<your-subdomain>.workers.dev";
-const GATEWAY_AUTH_TOKEN = "<your-secret-token>";
-
 export interface Env {
   OPENCLAW_CONTAINER: DurableObjectNamespace<OpenClawContainer>;
   OPENCLAW_KV: KVNamespace;
+  WORKER_URL: string;
+  GATEWAY_AUTH_TOKEN: string;
   AI_GATEWAY_ACCOUNT_ID?: string;
   AI_GATEWAY_ID?: string;
   AI_GATEWAY_AUTH_TOKEN?: string;
 }
 
-export class OpenClawContainer extends Container {
-  defaultPort = 18789;
-  sleepAfter = "10m";
-  // Using heredoc with single-quoted delimiter ('CFGEOF'/'JSEOF') to avoid ALL shell escaping issues
-  entrypoint = [
+function buildEntrypoint(workerUrl: string, gatewayToken: string): string[] {
+  return [
     "sh", "-c",
     [
       // 0. Try to restore persisted data from KV (via Worker endpoint)
       "mkdir -p /home/node/.openclaw",
       "echo 'Attempting to restore data from KV...'",
-      `curl -sf --max-time 30 ${WORKER_URL}/persist/load > /tmp/snap_restore.b64 2>/dev/null || true`,
+      `curl -sf --max-time 30 ${workerUrl}/persist/load > /tmp/snap_restore.b64 2>/dev/null || true`,
       "if [ -s /tmp/snap_restore.b64 ] && head -c 4 /tmp/snap_restore.b64 | grep -qv '{'; then",
       "  base64 -d /tmp/snap_restore.b64 | tar xzf - -C /home/node/.openclaw/ 2>/dev/null && echo 'KV restore OK' || echo 'KV restore failed, will onboard fresh'",
       "else",
@@ -36,18 +29,18 @@ export class OpenClawContainer extends Container {
       "node dist/index.js onboard --mode local --no-install-daemon 2>/dev/null || true",
       // 2. Write config via heredoc (always overwrite with our config)
       "cat > /home/node/.openclaw/openclaw.json << 'CFGEOF'",
-      `{"gateway":{"mode":"local","bind":"lan","port":18789,"controlUi":{"enabled":true,"allowInsecureAuth":true,"allowedOrigins":["${WORKER_URL}"]},"auth":{"mode":"token","token":"${GATEWAY_AUTH_TOKEN}"},"trustedProxies":["0.0.0.0/0"]}}`,
+      `{"gateway":{"mode":"local","bind":"lan","port":18789,"controlUi":{"enabled":true,"allowInsecureAuth":true,"allowedOrigins":["${workerUrl}"]},"auth":{"mode":"token","token":"${gatewayToken}"},"trustedProxies":["0.0.0.0/0"]}}`,
       "CFGEOF",
       "echo 'Config written:' && cat /home/node/.openclaw/openclaw.json",
       // 2b. Write auth-profiles for OpenAI-compatible provider (Workers AI via AI Gateway)
       "mkdir -p /home/node/.openclaw/agents/main/agent",
       "cat > /home/node/.openclaw/agents/main/agent/auth-profiles.json << 'AUTHEOF'",
-      `{"openai-compatible":{"apiKey":"dummy","baseUrl":"${WORKER_URL}/openai/v1"}}`,
+      `{"openai-compatible":{"apiKey":"dummy","baseUrl":"${workerUrl}/openai/v1"}}`,
       "AUTHEOF",
       // 3. Write management server via heredoc (no escaping needed)
       "cat > /tmp/mgmt.js << 'JSEOF'",
       "const http=require('http'),https=require('https'),fs=require('fs'),{execSync}=require('child_process'),os=require('os');",
-      `const WORKER_URL='${WORKER_URL}';`,
+      `const WORKER_URL='${workerUrl}';`,
       "function saveSnapshot(){return new Promise((resolve,reject)=>{try{execSync('cd /home/node/.openclaw && tar czf /tmp/snap.tar.gz devices/ identity/ agents/',{timeout:10000});const data=fs.readFileSync('/tmp/snap.tar.gz').toString('base64');const u=new URL(WORKER_URL+'/persist/save');const r=https.request({hostname:u.hostname,path:u.pathname,method:'POST',headers:{'Content-Type':'text/plain','Content-Length':Buffer.byteLength(data)}},resp=>{let b='';resp.on('data',d=>b+=d);resp.on('end',()=>{console.log('KV saved:',b.trim());resolve(b);});});r.on('error',e=>{console.error('KV save net err:',e.message);reject(e);});r.write(data);r.end();}catch(e){console.error('KV save failed:',e.message);reject(e);}});}",
       "// Devices cache: refresh in background every 30s instead of on every request",
       "let devicesCache='';let devicesCacheTime=0;",
@@ -76,8 +69,6 @@ export class OpenClawContainer extends Container {
       "    else {res.end('ok');}",
       "  }catch(e){res.statusCode=500;res.end(e.message);}",
       "}).listen(18700,()=>console.log('mgmt:18700'));",
-      "// Periodic KV backup every 5 minutes (persists device pairings across restarts)",
-      "setInterval(()=>{saveSnapshot().catch(()=>{});},300000);",
       "JSEOF",
       // 4. Write model-patch script via heredoc
       "cat > /tmp/patch-model.js << 'PATCHEOF'",
@@ -93,7 +84,7 @@ export class OpenClawContainer extends Container {
       "if(!c.models)c.models={};",
       "if(!c.models.providers)c.models.providers={};",
       "c.models.providers['workers-ai']={",
-      `  baseUrl:'${WORKER_URL}/openai/v1',`,
+      `  baseUrl:'${workerUrl}/openai/v1',`,
       "  apiKey:'dummy',",
       "  api:'openai-completions',",
       "  models:[{id:'@cf/moonshotai/kimi-k2.5',name:'Kimi K2.5 (Workers AI)',reasoning:true,input:['text'],contextWindow:131072,maxTokens:8192}]",
@@ -110,10 +101,22 @@ export class OpenClawContainer extends Container {
       "for i in $(seq 1 30); do sleep 2; curl -s http://localhost:18789/healthz | grep -q ok && break; done",
       "echo 'Gateway ready, patching model config...'",
       "node /tmp/patch-model.js",
-      // 7. Auto-approve is now handled inside mgmt server via setInterval (no extra shell process)
+      // 7. Wait for gateway process
       "wait $GWPID",
     ].join("\n"),
   ];
+}
+
+export class OpenClawContainer extends Container {
+  defaultPort = 18789;
+  sleepAfter = "10m";
+
+  constructor(ctx: DurableObjectState<Env>, env: Env) {
+    super(ctx, env);
+    const workerUrl = env.WORKER_URL || "https://your-worker.workers.dev";
+    const gatewayToken = env.GATEWAY_AUTH_TOKEN || "change-me";
+    this.entrypoint = buildEntrypoint(workerUrl, gatewayToken);
+  }
 
   override onStart(): void {
     console.log("OpenClaw container started (port 18789)");
@@ -169,7 +172,7 @@ export default {
 
     // Admin dashboard UI
     if (path === "/admin" || path === "/admin/") {
-      return new Response(getAdminHtml(GATEWAY_AUTH_TOKEN), {
+      return new Response(getAdminHtml(env.GATEWAY_AUTH_TOKEN || "change-me"), {
         headers: { "content-type": "text/html; charset=utf-8" },
       });
     }
