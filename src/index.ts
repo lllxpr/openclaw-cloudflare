@@ -29,7 +29,7 @@ function buildEntrypoint(workerUrl: string, gatewayToken: string): string[] {
       "node dist/index.js onboard --mode local --no-install-daemon 2>/dev/null || true",
       // 2. Write config via heredoc (always overwrite with our config)
       "cat > /home/node/.openclaw/openclaw.json << 'CFGEOF'",
-      `{"gateway":{"mode":"local","bind":"lan","port":18789,"controlUi":{"enabled":true,"allowInsecureAuth":true,"allowedOrigins":["${workerUrl}"]},"auth":{"mode":"token","token":"${gatewayToken}"},"trustedProxies":["0.0.0.0/0"]}}`,
+      `{"gateway":{"mode":"local","bind":"lan","port":18789,"controlUi":{"enabled":true,"allowInsecureAuth":true,"allowedOrigins":["*"]},"auth":{"mode":"token","token":"${gatewayToken}"},"trustedProxies":["0.0.0.0/0"]}}`,
       "CFGEOF",
       "echo 'Config written:' && cat /home/node/.openclaw/openclaw.json",
       // 2b. Write auth-profiles for OpenAI-compatible provider (Workers AI via AI Gateway)
