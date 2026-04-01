@@ -4,7 +4,7 @@ import { getAdminHtml } from "./admin-html";
 export interface Env {
   OPENCLAW_CONTAINER: DurableObjectNamespace<OpenClawContainer>;
   OPENCLAW_KV: KVNamespace;
-  WORKER_URL: string;
+  WORKER_URL?: string;
   GATEWAY_AUTH_TOKEN: string;
   AI_GATEWAY_ACCOUNT_ID?: string;
   AI_GATEWAY_ID?: string;
@@ -110,12 +110,29 @@ function buildEntrypoint(workerUrl: string, gatewayToken: string): string[] {
 export class OpenClawContainer extends Container {
   defaultPort = 18789;
   sleepAfter = "10m";
+  private gatewayToken: string;
+  private urlDetected = false;
 
   constructor(ctx: DurableObjectState<Env>, env: Env) {
     super(ctx, env);
-    const workerUrl = env.WORKER_URL || "https://your-worker.workers.dev";
-    const gatewayToken = env.GATEWAY_AUTH_TOKEN || "change-me";
-    this.entrypoint = buildEntrypoint(workerUrl, gatewayToken);
+    this.gatewayToken = env.GATEWAY_AUTH_TOKEN || "change-me";
+    // If WORKER_URL is explicitly set, use it; otherwise auto-detect on first fetch
+    if (env.WORKER_URL && !env.WORKER_URL.includes("your-worker") && !env.WORKER_URL.includes("your-subdomain")) {
+      this.entrypoint = buildEntrypoint(env.WORKER_URL, this.gatewayToken);
+      this.urlDetected = true;
+    }
+  }
+
+  // Auto-detect Worker URL from the first incoming request before the container starts
+  override async fetch(request: Request): Promise<Response> {
+    if (!this.urlDetected) {
+      const url = new URL(request.url);
+      const workerUrl = `${url.protocol}//${url.hostname}`;
+      this.entrypoint = buildEntrypoint(workerUrl, this.gatewayToken);
+      this.urlDetected = true;
+      console.log(`Auto-detected WORKER_URL: ${workerUrl}`);
+    }
+    return super.fetch(request);
   }
 
   override onStart(): void {

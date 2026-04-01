@@ -13,9 +13,6 @@
   },
   "cloudflare": {
     "bindings": {
-      "WORKER_URL": {
-        "description": "Your Worker's public URL, e.g. `https://your-worker.your-subdomain.workers.dev`. You'll see it in the deploy output."
-      },
       "GATEWAY_AUTH_TOKEN": {
         "description": "A secret token for the OpenClaw Chat UI. Generate one with `openssl rand -hex 16` or use any random string."
       },

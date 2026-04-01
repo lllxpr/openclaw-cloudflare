@@ -60,17 +60,18 @@ binding = "OPENCLAW_KV"
 id = "<your-kv-namespace-id>"   # ← paste here
 ```
 
-### 4. Configure your Worker URL and Auth Token
+### 4. Set Gateway Auth Token
 
-Edit `src/index.ts` — update the constants at the top of the file:
+Edit `wrangler.toml` — set `GATEWAY_AUTH_TOKEN` to a secret string of your choice:
 
-```typescript
-const WORKER_URL = "https://<your-worker-name>.<your-subdomain>.workers.dev";
-const GATEWAY_AUTH_TOKEN = "your-secret-token";
+```toml
+[vars]
+GATEWAY_AUTH_TOKEN = "your-secret-token"
 ```
 
-- **`WORKER_URL`** — Your Worker's public URL. After the first deploy you can find it in the Wrangler output or at `dash.cloudflare.com` → Workers & Pages → your worker → Settings → Triggers.
-- **`GATEWAY_AUTH_TOKEN`** — A secret string you choose yourself (any random string is fine, e.g. `openssl rand -hex 16`). It is used to authenticate with the OpenClaw Control UI chat interface. You'll append it as `/#token=<your-token>` when accessing the Chat UI.
+Generate a random one with `openssl rand -hex 16`. This token is used to authenticate with the OpenClaw Chat UI — you'll append it as `/#token=<your-token>` when accessing it.
+
+> **Note**: `WORKER_URL` is auto-detected from the first incoming request — no manual configuration needed.
 
 ### 5. Update `wrangler.toml`
 
