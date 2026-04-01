@@ -72,16 +72,10 @@ const GATEWAY_AUTH_TOKEN = "your-secret-token";
 
 ### 5. Update `wrangler.toml`
 
-Change the worker name and (optionally) the container image:
+Change the worker name:
 
 ```toml
 name = "your-worker-name"
-```
-
-If you want SSH access to the container, replace the `public_key` in `wrangler.toml` with your own:
-
-```bash
-cat ~/.ssh/id_ed25519.pub
 ```
 
 ### 6. Set up AI Gateway (optional, for Workers AI)
