@@ -2,6 +2,8 @@
 
 Deploy [OpenClaw](https://github.com/anthropics/openclaw) — an open-source AI coding gateway — on [Cloudflare Containers](https://developers.cloudflare.com/containers/) with Workers AI integration, persistent device pairing via KV, and a built-in admin dashboard.
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/lllxpr/openclaw-cloudflare)
+
 ## Features
 
 - **One-click deploy** — OpenClaw running on Cloudflare's global network

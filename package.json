@@ -11,6 +11,19 @@
   "dependencies": {
     "@cloudflare/containers": "^0.2.0"
   },
+  "cloudflare": {
+    "bindings": {
+      "AI_GATEWAY_ACCOUNT_ID": {
+        "description": "Your Cloudflare **Account ID**. Find it at [dash.cloudflare.com](https://dash.cloudflare.com) → any zone → Overview → right sidebar."
+      },
+      "AI_GATEWAY_ID": {
+        "description": "Your **AI Gateway** name. Create one at [dash.cloudflare.com](https://dash.cloudflare.com) → AI → AI Gateway."
+      },
+      "AI_GATEWAY_AUTH_TOKEN": {
+        "description": "Auth token for AI Gateway. Generate one at AI Gateway → Settings → API Auth Token."
+      }
+    }
+  },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250327.0",
     "typescript": "^5.8.2",
