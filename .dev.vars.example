@@ -1,0 +1,7 @@
+# OpenClaw Gateway Token - used for Chat UI authentication
+# Generate one with: openssl rand -hex 16
+GATEWAY_AUTH_TOKEN=change-me
+
+# AI Gateway Auth Token - Cloudflare API token with AI Gateway permission
+# Create at: dash.cloudflare.com → My Profile → API Tokens → Create Token
+AI_GATEWAY_AUTH_TOKEN=your-api-token

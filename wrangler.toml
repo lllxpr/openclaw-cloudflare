@@ -4,10 +4,8 @@ compatibility_date = "2026-03-27"
 compatibility_flags = ["nodejs_compat"]
 
 [vars]
-GATEWAY_AUTH_TOKEN = "change-me"
 AI_GATEWAY_ACCOUNT_ID = "<your-account-id>"
 AI_GATEWAY_ID = "<your-gateway-id>"
-AI_GATEWAY_AUTH_TOKEN = "<your-api-token>"
 
 [observability]
 enabled = true
