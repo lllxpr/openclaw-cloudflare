@@ -1,0 +1,36 @@
+name = "openclaw-cf-demo"
+main = "src/index.ts"
+compatibility_date = "2026-03-27"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+AI_GATEWAY_ACCOUNT_ID = "<your-account-id>"
+AI_GATEWAY_ID = "<your-gateway-id>"
+
+[observability]
+enabled = true
+
+[[containers]]
+class_name = "OpenClawContainer"
+image = "docker.io/alpine/openclaw:2026.3.24-slim"
+instance_type = "standard-2"
+max_instances = 1
+
+[containers.wrangler_ssh]
+enabled = true
+
+[[containers.authorized_keys]]
+name = "your-name"
+public_key = "<your-ssh-public-key>"
+
+[[kv_namespaces]]
+binding = "OPENCLAW_KV"
+id = "<your-kv-namespace-id>"
+
+[[durable_objects.bindings]]
+name = "OPENCLAW_CONTAINER"
+class_name = "OpenClawContainer"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["OpenClawContainer"]
