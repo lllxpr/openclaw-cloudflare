@@ -60,16 +60,30 @@ binding = "OPENCLAW_KV"
 id = "<your-kv-namespace-id>"   # ← paste here
 ```
 
-### 4. Set Gateway Auth Token
+### 4. Configure Secrets
 
-Edit `wrangler.toml` — set `GATEWAY_AUTH_TOKEN` to a secret string of your choice:
+Copy the example secrets file and fill in your values:
 
-```toml
-[vars]
-GATEWAY_AUTH_TOKEN = "your-secret-token"
+```bash
+cp .dev.vars.example .dev.vars
 ```
 
-Generate a random one with `openssl rand -hex 16`. This token is used to authenticate with the OpenClaw Chat UI — you'll append it as `/#token=<your-token>` when accessing it.
+Edit `.dev.vars`:
+
+```env
+GATEWAY_AUTH_TOKEN=your-secret-token
+AI_GATEWAY_AUTH_TOKEN=your-api-token
+```
+
+- **`GATEWAY_AUTH_TOKEN`** — A secret string for authenticating with the OpenClaw Chat UI. Generate one with `openssl rand -hex 16`.
+- **`AI_GATEWAY_AUTH_TOKEN`** — Cloudflare API token with AI Gateway permission (see Step 6).
+
+For production deployment, set them as secrets:
+
+```bash
+npx wrangler secret put GATEWAY_AUTH_TOKEN
+npx wrangler secret put AI_GATEWAY_AUTH_TOKEN
+```
 
 > **Note**: `WORKER_URL` is auto-detected from the first incoming request — no manual configuration needed.
 
@@ -91,12 +105,6 @@ Update `wrangler.toml` with your account ID and gateway ID:
 [vars]
 AI_GATEWAY_ACCOUNT_ID = "<your-account-id>"
 AI_GATEWAY_ID = "<your-gateway-id>"
-```
-
-Set the auth token as a secret:
-
-```bash
-npx wrangler secret put AI_GATEWAY_AUTH_TOKEN
 ```
 
 ### 7. Deploy
@@ -151,6 +159,7 @@ Persisted directories: `devices/`, `identity/`, `agents/` (chat sessions).
 ├── src/
 │   ├── index.ts          # Worker + Container class + routing + mgmt server
 │   └── admin-html.ts     # Admin dashboard HTML (Tailwind CSS)
+├── .dev.vars.example      # Secrets template (GATEWAY_AUTH_TOKEN, AI_GATEWAY_AUTH_TOKEN)
 ├── wrangler.toml          # Cloudflare configuration
 ├── package.json
 ├── tsconfig.json
@@ -161,7 +170,7 @@ Persisted directories: `devices/`, `identity/`, `agents/` (chat sessions).
 
 **Container won't start?**
 - Check `npx wrangler containers list --json` for container state
-- SSH in: `npx wrangler containers instances <container-id> --json` → `npx wrangler containers ssh <instance-id>`
+- Use the Admin Dashboard → **CLI** tab to run diagnostic commands inside the container
 
 **Devices not showing?**
 - The devices list caches every 30s. Click **Refresh** in the Devices tab for a fresh read.
