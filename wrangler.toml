@@ -3,10 +3,6 @@ main = "src/index.ts"
 compatibility_date = "2026-03-27"
 compatibility_flags = ["nodejs_compat"]
 
-[vars]
-AI_GATEWAY_ACCOUNT_ID = "<your-account-id>"
-AI_GATEWAY_ID = "<your-gateway-id>"
-
 [observability]
 enabled = true
 

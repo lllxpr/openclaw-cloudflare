@@ -72,16 +72,22 @@ Edit `.dev.vars`:
 
 ```env
 GATEWAY_AUTH_TOKEN=your-secret-token
+AI_GATEWAY_ACCOUNT_ID=your-account-id
+AI_GATEWAY_ID=your-gateway-id
 AI_GATEWAY_AUTH_TOKEN=your-api-token
 ```
 
 - **`GATEWAY_AUTH_TOKEN`** — A secret string for authenticating with the OpenClaw Chat UI. Generate one with `openssl rand -hex 16`.
-- **`AI_GATEWAY_AUTH_TOKEN`** — Cloudflare API token with AI Gateway permission (see Step 6).
+- **`AI_GATEWAY_ACCOUNT_ID`** — Your Cloudflare Account ID. Find it at `dash.cloudflare.com` → any zone → Overview → right sidebar.
+- **`AI_GATEWAY_ID`** — Your AI Gateway name. Create one at `dash.cloudflare.com` → AI → AI Gateway.
+- **`AI_GATEWAY_AUTH_TOKEN`** — Cloudflare API token. Create at My Profile → API Tokens → Create Token (with AI Gateway permission).
 
 For production deployment, set them as secrets:
 
 ```bash
 npx wrangler secret put GATEWAY_AUTH_TOKEN
+npx wrangler secret put AI_GATEWAY_ACCOUNT_ID
+npx wrangler secret put AI_GATEWAY_ID
 npx wrangler secret put AI_GATEWAY_AUTH_TOKEN
 ```
 
@@ -95,19 +101,7 @@ Change the worker name:
 name = "your-worker-name"
 ```
 
-### 6. Set up AI Gateway (optional, for Workers AI)
-
-Create an AI Gateway in the [Cloudflare dashboard](https://dash.cloudflare.com/) → AI → AI Gateway.
-
-Update `wrangler.toml` with your account ID and gateway ID:
-
-```toml
-[vars]
-AI_GATEWAY_ACCOUNT_ID = "<your-account-id>"
-AI_GATEWAY_ID = "<your-gateway-id>"
-```
-
-### 7. Deploy
+### 6. Deploy
 
 ```bash
 npm run deploy
@@ -115,13 +109,13 @@ npm run deploy
 
 First deploy will take a few minutes to pull the container image (~784 MB).
 
-### 8. Access your deployment
+### 7. Access your deployment
 
 - **Admin Dashboard**: `https://<your-worker>.workers.dev/admin/`
 - **Chat UI**: `https://<your-worker>.workers.dev/#token=<your-token>`
 - **Health check**: `https://<your-worker>.workers.dev/healthz`
 
-### 9. Approve your first device
+### 8. Approve your first device
 
 1. Open the Chat UI link above
 2. Open the Admin Dashboard → **Devices** tab
