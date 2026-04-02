@@ -9,9 +9,10 @@ export interface Env {
   AI_GATEWAY_ACCOUNT_ID?: string;
   AI_GATEWAY_ID?: string;
   AI_GATEWAY_AUTH_TOKEN?: string;
+  TELEGRAM_BOT_TOKEN?: string;
 }
 
-function buildEntrypoint(workerUrl: string, gatewayToken: string): string[] {
+function buildEntrypoint(workerUrl: string, gatewayToken: string, telegramToken?: string): string[] {
   return [
     "sh", "-c",
     [
@@ -27,11 +28,13 @@ function buildEntrypoint(workerUrl: string, gatewayToken: string): string[] {
       "rm -f /tmp/snap_restore.b64",
       // 1. Onboard (initializes DB, keys, etc. - idempotent, safe with restored data)
       "node dist/index.js onboard --mode local --no-install-daemon 2>/dev/null || true",
-      // 2. Write config via heredoc (always overwrite with our config)
+      // 2. Always write config (gateway overwrites user changes, so KV restore is unreliable for config)
       "cat > /home/node/.openclaw/openclaw.json << 'CFGEOF'",
-      `{"gateway":{"mode":"local","bind":"lan","port":18789,"controlUi":{"enabled":true,"allowInsecureAuth":true,"allowedOrigins":["*"]},"auth":{"mode":"token","token":"${gatewayToken}"},"trustedProxies":["0.0.0.0/0"]}}`,
+      telegramToken
+        ? `{"gateway":{"mode":"local","bind":"lan","port":18789,"controlUi":{"enabled":true,"allowInsecureAuth":true,"allowedOrigins":["*"]},"auth":{"mode":"token","token":"${gatewayToken}"},"trustedProxies":["0.0.0.0/0"]},"channels":{"telegram":{"enabled":true,"botToken":"${telegramToken}","dmPolicy":"pairing"}}}`
+        : `{"gateway":{"mode":"local","bind":"lan","port":18789,"controlUi":{"enabled":true,"allowInsecureAuth":true,"allowedOrigins":["*"]},"auth":{"mode":"token","token":"${gatewayToken}"},"trustedProxies":["0.0.0.0/0"]}}`,
       "CFGEOF",
-      "echo 'Config written:' && cat /home/node/.openclaw/openclaw.json",
+      "echo 'Config written'",
       // 2b. Write auth-profiles for OpenAI-compatible provider (Workers AI via AI Gateway)
       "mkdir -p /home/node/.openclaw/agents/main/agent",
       "cat > /home/node/.openclaw/agents/main/agent/auth-profiles.json << 'AUTHEOF'",
@@ -41,11 +44,14 @@ function buildEntrypoint(workerUrl: string, gatewayToken: string): string[] {
       "cat > /tmp/mgmt.js << 'JSEOF'",
       "const http=require('http'),https=require('https'),fs=require('fs'),{execSync}=require('child_process'),os=require('os');",
       `const WORKER_URL='${workerUrl}';`,
-      "function saveSnapshot(){return new Promise((resolve,reject)=>{try{execSync('cd /home/node/.openclaw && tar czf /tmp/snap.tar.gz devices/ identity/ agents/',{timeout:10000});const data=fs.readFileSync('/tmp/snap.tar.gz').toString('base64');const u=new URL(WORKER_URL+'/persist/save');const r=https.request({hostname:u.hostname,path:u.pathname,method:'POST',headers:{'Content-Type':'text/plain','Content-Length':Buffer.byteLength(data)}},resp=>{let b='';resp.on('data',d=>b+=d);resp.on('end',()=>{console.log('KV saved:',b.trim());resolve(b);});});r.on('error',e=>{console.error('KV save net err:',e.message);reject(e);});r.write(data);r.end();}catch(e){console.error('KV save failed:',e.message);reject(e);}});}",
+      "function saveSnapshot(){return new Promise((resolve,reject)=>{try{execSync('cd /home/node/.openclaw && tar czf /tmp/snap.tar.gz openclaw.json devices/ identity/ agents/',{timeout:10000});const data=fs.readFileSync('/tmp/snap.tar.gz').toString('base64');const u=new URL(WORKER_URL+'/persist/save');const r=https.request({hostname:u.hostname,path:u.pathname,method:'POST',headers:{'Content-Type':'text/plain','Content-Length':Buffer.byteLength(data)}},resp=>{let b='';resp.on('data',d=>b+=d);resp.on('end',()=>{console.log('KV saved:',b.trim());resolve(b);});});r.on('error',e=>{console.error('KV save net err:',e.message);reject(e);});r.write(data);r.end();}catch(e){console.error('KV save failed:',e.message);reject(e);}});}",
       "// Devices cache: refresh in background every 30s instead of on every request",
       "let devicesCache='';let devicesCacheTime=0;",
       "function refreshDevices(){try{devicesCache=execSync('node dist/index.js devices list 2>&1',{encoding:'utf8',timeout:15000});devicesCacheTime=Date.now();}catch(e){console.error('devices refresh err:',e.message);}}",
       "setInterval(refreshDevices,30000);setTimeout(refreshDevices,3000);",
+      "// Auto-save to KV every 5 minutes + once after 60s startup",
+      "setInterval(()=>{saveSnapshot().catch(e=>console.error('auto-save err:',e.message));},300000);",
+      "setTimeout(()=>{saveSnapshot().catch(e=>console.error('startup-save err:',e.message));},60000);",
       "http.createServer((req,res)=>{",
       "  res.setHeader('content-type','text/plain');",
       "  try{",
@@ -89,7 +95,18 @@ function buildEntrypoint(workerUrl: string, gatewayToken: string): string[] {
       "  api:'openai-completions',",
       "  models:[{id:'@cf/moonshotai/kimi-k2.5',name:'Kimi K2.5 (Workers AI)',reasoning:true,input:['text'],contextWindow:131072,maxTokens:8192}]",
       "};",
+      "// Add Telegram channel if token is configured",
+      `var tgToken='${telegramToken || ''}';`,
+      "if(tgToken){if(!c.channels)c.channels={};c.channels.telegram={enabled:true,botToken:tgToken,dmPolicy:'pairing'};console.log('Telegram channel configured');}",
       "require('fs').writeFileSync(f,JSON.stringify(c,null,2));",
+      "// Write exec-approvals.json: allow all commands for all agents (wildcard)",
+      "var ea={version:1,socket:{},defaults:{},agents:{'*':{allowlist:[{pattern:'*',lastUsedAt:Date.now()},{pattern:'**',lastUsedAt:Date.now()}]}}};require('fs').writeFileSync('/home/node/.openclaw/exec-approvals.json',JSON.stringify(ea,null,2));console.log('exec-approvals: wildcard allow set (* and **)');",
+      "// Sync agent-level models.json to match global config",
+      "require('fs').mkdirSync('/home/node/.openclaw/agents/main/agent',{recursive:true});",
+      "require('fs').writeFileSync('/home/node/.openclaw/agents/main/agent/models.json',JSON.stringify(c.models,null,2));",
+      "// Clear stale providerOverride/modelOverride from sessions (can break model lookup after KV restore)",
+      "var sf='/home/node/.openclaw/agents/main/sessions/sessions.json';",
+      "if(require('fs').existsSync(sf)){var s=JSON.parse(require('fs').readFileSync(sf,'utf8'));var changed=0;for(var k in s){if(s[k].providerOverride||s[k].modelOverride){delete s[k].providerOverride;delete s[k].modelOverride;changed++;}}if(changed){require('fs').writeFileSync(sf,JSON.stringify(s,null,2));console.log('Cleared model overrides from '+changed+' session(s).');}}",
       "console.log('Model config patched: workers-ai/@cf/moonshotai/kimi-k2.5');",
       "PATCHEOF",
       // 5. Start management server in background
@@ -111,14 +128,16 @@ export class OpenClawContainer extends Container {
   defaultPort = 18789;
   sleepAfter = "10m";
   private gatewayToken: string;
+  private telegramToken?: string;
   private urlDetected = false;
 
   constructor(ctx: DurableObjectState<Env>, env: Env) {
     super(ctx, env);
     this.gatewayToken = env.GATEWAY_AUTH_TOKEN || "change-me";
+    this.telegramToken = env.TELEGRAM_BOT_TOKEN;
     // If WORKER_URL is explicitly set, use it; otherwise auto-detect on first fetch
     if (env.WORKER_URL && !env.WORKER_URL.includes("your-worker") && !env.WORKER_URL.includes("your-subdomain")) {
-      this.entrypoint = buildEntrypoint(env.WORKER_URL, this.gatewayToken);
+      this.entrypoint = buildEntrypoint(env.WORKER_URL, this.gatewayToken, this.telegramToken);
       this.urlDetected = true;
     }
   }
@@ -128,7 +147,7 @@ export class OpenClawContainer extends Container {
     if (!this.urlDetected) {
       const url = new URL(request.url);
       const workerUrl = `${url.protocol}//${url.hostname}`;
-      this.entrypoint = buildEntrypoint(workerUrl, this.gatewayToken);
+      this.entrypoint = buildEntrypoint(workerUrl, this.gatewayToken, this.telegramToken);
       this.urlDetected = true;
       console.log(`Auto-detected WORKER_URL: ${workerUrl}`);
     }
@@ -320,6 +339,28 @@ async function handleAIGatewayProxy(request: Request, env: Env, endpoint: string
       // Limit max_tokens to prevent extremely long reasoning chains that cause stuck responses
       if (!payload.max_tokens) {
         payload.max_tokens = 4096;
+      }
+      // Kimi K2.5 reasoning model requires explicit tool_choice to reliably call tools in streaming mode
+      if (payload.tools?.length > 0 && payload.tool_choice === undefined) {
+        payload.tool_choice = "auto";
+      }
+      // Normalize tool result messages: OpenAI spec requires role:"tool" after assistant tool_calls.
+      // If OpenClaw sends role:"user" at that position, convert to role:"tool" with proper tool_call_id.
+      {
+        const ms: Array<{role: string; content?: unknown; tool_calls?: Array<{id: string}>; tool_call_id?: string}> = payload.messages ?? [];
+        for (let i = 1; i < ms.length; i++) {
+          const prev = ms[i - 1];
+          const curr = ms[i];
+          if (prev.role === "assistant" && Array.isArray(prev.tool_calls) && prev.tool_calls.length > 0 && curr.role === "user") {
+            curr.role = "tool";
+            if (!curr.tool_call_id) curr.tool_call_id = prev.tool_calls[0].id;
+            if (Array.isArray(curr.content)) {
+              curr.content = (curr.content as Array<{type: string; text?: string; content?: string}>)
+                .map(c => (typeof c === "string" ? c : (c.text ?? c.content ?? JSON.stringify(c))))
+                .join("\n");
+            }
+          }
+        }
       }
     }
     const headers = new Headers();
